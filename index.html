@@ -8,25 +8,38 @@
 
   <script id="view-lattice-shader-fs" type="x-shader/x-fragment">
     precision highp float;
+
+    uniform sampler2D texDepthMapSampler;
+
     varying vec3 pass_Pos;
+
     void main(void) {
-      gl_FragColor = vec4(pass_Pos, 1.0);
+      vec4 color = texture2D(texDepthMapSampler, pass_Pos.xy);
+      gl_FragColor = color;
     }
   </script>
   <script id="view-lattice-shader-vs" type="x-shader/x-vertex">
     precision highp float;
     attribute vec3 aPosition;
+
     uniform mat4 uMVMatrix;
     uniform mat4 uProjMatrix;
+    uniform sampler2D texDepthMapSampler;
+
     varying vec3 pass_Pos;
+
     void main(void) {
       pass_Pos = aPosition;
-      gl_Position = uProjMatrix * uMVMatrix * vec4(aPosition, 1.0);
+      vec4 color = texture2D(texDepthMapSampler, pass_Pos.xy);
+      pass_Pos.z = 1.0 - ((color.r + color.g + color.b) / 3.0);
+      gl_Position = uProjMatrix * uMVMatrix * vec4(pass_Pos, 1.0);
     }
   </script>
   
   <script type="text/javascript">
     var gl; // gl instance
+    var fptex_extension;
+    var fptextlinear_extension;
 
     // Camera matrices
     var perspectiveMatrix = mat4.create();
@@ -43,8 +56,21 @@
         alert("Could not initialize WebGL");
       }
 
+      fptex_extension = gl.getExtension('OES_texture_float'); // Enable floating point textures
+      if (fptex_extension == null) {
+        alert("Floating point textures extension not supported");
+        return;
+      }
+      fptextlinear_extension = gl.getExtension('OES_texture_float_linear'); // Enable floating point textures linear filtering
+      if (fptextlinear_extension == null) {
+        alert("Floating point textures linear filtering extension not supported");
+        return;
+      }
+
       setupGeometries();
       setupShaderPrograms();
+      setupTextures();
+      setupInput(canvas);
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.enable(gl.DEPTH_TEST);
@@ -166,13 +192,93 @@
       // Bind uniforms and attributes      
       viewLatticeProgram.uProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uProjMatrix");
       viewLatticeProgram.uMVMatrix = gl.getUniformLocation(viewLatticeProgram, "uMVMatrix");
-      viewLatticeProgram.aPosition = gl.getAttribLocation(viewLatticeProgram, "aPosition");
+      viewLatticeProgram.aPosition = gl.getAttribLocation(viewLatticeProgram, "aPosition");      
       gl.enableVertexAttribArray(viewLatticeProgram.aPosition);
+      viewLatticeProgram.texFieldSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
+    }
+
+    var depthMapTexture;
+    var fieldTextureIsSafeToRender = false;
+
+    function setupTextures() {
+      depthMapTexture = gl.createTexture();
+      depthMapTexture.image = new Image();
+      depthMapTexture.image.onload = function () {
+        gl.bindTexture(gl.TEXTURE_2D, depthMapTexture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, depthMapTexture.image);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        fieldTextureIsSafeToRender = true;
+      }
+      depthMapTexture.image.src = "assets/depthmap.png";
+    }
+
+    var sceneRotationMatrix = mat4.create();
+    var mouseDown = false;
+    var mouseDownElementId;
+    var lastMouseX = null;
+    var lastMouseY = null;
+
+    function setupInput(canvas) {
+      mat4.identity(sceneRotationMatrix);
+      canvas.onmousedown = handleMouseDown;
+      canvas.onmouseup = handleMouseUp;
+      canvas.onmousemove = handleMouseMove;
+      canvas.addEventListener('mouseout', onMouseOutOfCanvas, true); // Stop canvas input if mouse gets out of it
+    }
+
+    function onMouseOutOfCanvas(event) {
+      var e = event.toElement || event.relatedTarget;
+      if (mouseDownElementId !== "canvas") // This is not handled for arrows
+        return;
+      handleMouseUp(event);
+    }
+
+    function handleMouseDown(event) {
+      mouseDown = true;
+      // Get element id (cross-browser friendly) where mouse was pressed
+      mouseDownElementId = event.target ? event.target.id : event.srcElement.id;
+      lastMouseX = event.clientX;
+      lastMouseY = event.clientY;
+    }
+
+    function handleMouseUp(event) {
+      mouseDown = false;
+      mouseDownElementId = null;
+    }
+
+    function handleMouseMove(event) {
+      
+      if(!mouseDown)
+        return;
+
+      var newX = event.clientX;
+      var newY = event.clientY;
+      var deltaX = newX - lastMouseX;
+      var deltaY = - (newY - lastMouseY);
+
+      if (mouseDownElementId == "canvas") { // Canvas handling        
+        var newRotationMatrix = mat4.create();
+        mat4.identity(newRotationMatrix);
+        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
+        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaY / 10), [1, 0, 0]);
+        mat4.multiply(sceneRotationMatrix, newRotationMatrix, sceneRotationMatrix);
+      }
+
+      lastMouseX = newX
+      lastMouseY = newY;
     }
 
     function drawScene() {
-      mat4.lookAt(modelViewMatrix, /* eye */ [0, 0, 5], /* center */ [0, 0, 0], /* up */ [0, 1, 0]); 
-      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);
+
+      if(fieldTextureIsSafeToRender == false)
+        return;
+
+      mat4.lookAt(modelViewMatrix, /* eye */ [2, 0.5, 0.2], /* center */ [0.5, 0.5, 0], /* up */ [0, 1, 0]);
+      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
+      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);      
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
@@ -183,9 +289,12 @@
       gl.uniformMatrix4fv(viewLatticeProgram.uProjMatrix, false /* WebGL supports column-major only */, 
         perspectiveMatrix);
 
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, depthMapTexture);
+      gl.uniform1i(viewLatticeProgram.texFieldSampler, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, lattice_data);
       gl.vertexAttribPointer(viewLatticeProgram.aPosition, 3, gl.FLOAT, false, 0, 0);      
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, lattice_data.n_of_vertices);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, lattice_data.n_of_vertices);      
     }
     
     function paintLoop() {
