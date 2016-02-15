@@ -263,7 +263,7 @@
         var newRotationMatrix = mat4.create();
         mat4.identity(newRotationMatrix);
         mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
-        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaY / 10), [1, 0, 0]);
+        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaY / 10), [0, 0, 1]);
         mat4.multiply(sceneRotationMatrix, newRotationMatrix, sceneRotationMatrix);
       }
 
@@ -276,9 +276,13 @@
       if(fieldTextureIsSafeToRender == false)
         return;
 
-      mat4.lookAt(modelViewMatrix, /* eye */ [2, 0.5, 0.2], /* center */ [0.5, 0.5, 0], /* up */ [0, 1, 0]);
+      var mm = mat4.create();
+      mat4.identity(mm);
+      mat4.lookAt(modelViewMatrix, /* eye */ [1.5, 1.3, 0.4], /* center */ [0.5, 0.5, 0], /* up */ [0, 1, 0]);
       mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
-      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);      
+      mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
+      
+      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
