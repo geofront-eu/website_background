@@ -5,6 +5,7 @@
   <script type="text/javascript" src="utils/gl-matrix-min.js"></script>
   <script type="text/javascript" src="utils/webgl-utils.js"></script>
   <script type="text/javascript" src="utils/webgl-debug.js"></script>
+  <script type="text/javascript" src="utils/geocast-filereader.js"></script>
 
   <script id="view-lattice-shader-fs" type="x-shader/x-fragment">
     precision highp float;
@@ -71,6 +72,11 @@
       setupShaderPrograms();
       setupTextures();
       setupInput(canvas);
+
+      var callback = function(output) {
+        // alert(output); // Do something with this geocast object
+      };
+      readGeoCastFile("geocast/test.geocast", callback);
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.enable(gl.DEPTH_TEST);
