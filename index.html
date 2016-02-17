@@ -70,13 +70,9 @@
 
       setupGeometries();
       setupShaderPrograms();
+      setupGeoCastFiles();
       setupTextures();
-      setupInput(canvas);
-
-      var callback = function(output) {
-        // alert(output); // Do something with this geocast object
-      };
-      readGeoCastFile("geocast/test.geocast", callback);
+      setupInput(canvas);      
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.enable(gl.DEPTH_TEST);
@@ -203,22 +199,52 @@
       viewLatticeProgram.texFieldSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
     }
 
-    var depthMapTexture;
-    var fieldTextureIsSafeToRender = false;
+    var sceneFrames = 100; // 100 frames
+    var geocastObjects = [];
+
+    function formatNumberWithLeadingZeros(num, size) {
+      var s = "000000000" + num;
+      return s.substr(s.length - size);
+    }
+
+    function setupGeoCastFiles() {
+      var callback = function(output) {
+        geocastObjects.push(output);
+      };      
+      for (var i = 1; i <= sceneFrames; ++i) {
+        readGeoCastFile("assets/TiltCamera/geocast/" + formatNumberWithLeadingZeros(i, 4) + ".geocast", callback);
+      }
+    }
+
+    var depthMapTextures = [];
+    var colorMapTextures = [];
+    var numberOfSafeToRenderTextures = 0;
 
     function setupTextures() {
-      depthMapTexture = gl.createTexture();
-      depthMapTexture.image = new Image();
-      depthMapTexture.image.onload = function () {
-        gl.bindTexture(gl.TEXTURE_2D, depthMapTexture);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, depthMapTexture.image);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.bindTexture(gl.TEXTURE_2D, null);
-        fieldTextureIsSafeToRender = true;
+
+      var loadTextureFromFile = function(pngPath) {
+        var texture = gl.createTexture();
+        texture.image = new Image();
+        texture.image.onload = function () {
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+          ++numberOfSafeToRenderTextures;
+        }
+        texture.image.src = pngPath;
+        return texture;
+      };
+
+      for (var i = 1; i <= sceneFrames; ++i) {
+        var imageNumber = formatNumberWithLeadingZeros(i, 4);
+        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png");
+        depthMapTextures.push(depthMap);
+        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png");
+        colorMapTextures.push(colorMap);
       }
-      depthMapTexture.image.src = "assets/depthmap.png";
     }
 
     var sceneRotationMatrix = mat4.create();
@@ -279,7 +305,7 @@
 
     function drawScene() {
 
-      if(fieldTextureIsSafeToRender == false)
+      if(numberOfSafeToRenderTextures < sceneFrames)
         return;
 
       var mm = mat4.create();
@@ -300,7 +326,7 @@
         perspectiveMatrix);
 
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, depthMapTexture);
+      gl.bindTexture(gl.TEXTURE_2D, depthMapTextures[0]);
       gl.uniform1i(viewLatticeProgram.texFieldSampler, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, lattice_data);
       gl.vertexAttribPointer(viewLatticeProgram.aPosition, 3, gl.FLOAT, false, 0, 0);      

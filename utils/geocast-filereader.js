@@ -42,9 +42,18 @@ function readGeoCastFile(filePath, callback) {
  *                       0.0, 1.0, 0.0, 0.0,
  *                       0.0, 0.0, 1.0, 0.0,
  *                       0.0, 0.0, 0.0, 1.0];
+ *    ------ varying part -------
  *    dataProject = "Ortho";
  *    windowSize = [12.0, 43.2];
  *    projRange = [0.10, 200.0];
+ *    ---------------------------
+ *    dataProject = "Perspective";
+ *    Fovy = 45.0;
+ *    Aspect = 1.0;
+ *    ClipRange = [1.0, 200.0];
+ *    --- end of varying part ---
+ *    
+ *    *optional* worldSpaceDepth = true;
  *    ZDataRange = [0.0, 100.0];
  *  }
  *
@@ -57,23 +66,33 @@ function parseGeoCastContent(content) {
   var arrayOfLines = content.split("\n");
   var i = 0;
 
+  var skipCommentLines = function(index) {
+    var patt = /^\s*#.*/g;    
+    while(patt.test(arrayOfLines[index]))
+      ++index;
+    return index;
+  };
+
   // Check signature
+  i = skipCommentLines(i);
   var patt = /GeoCast V(\d+\.\d+)/g;
-  var res = patt.exec(arrayOfLines[i++]);
+  var res = patt.exec(arrayOfLines[i++].trim());
   if (!res) {
     alert("Not a GeoCast file");
     return;
   }
   output.version = res[1];
 
-  if (arrayOfLines[i] != "DynamicCamera" && arrayOfLines[i] != "StaticCamera") {
+  var cameraType = arrayOfLines[i++].trim();
+  if (cameraType != "DynamicCamera" && cameraType != "StaticCamera") {
     alert("Unrecognized camera type");
     return;
   }
-  output.cameraType = arrayOfLines[i++];
+  output.cameraType = cameraType;
 
   // Pos
-  var parts = arrayOfLines[i++].split(' ');
+  i = skipCommentLines(i);
+  var parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "Pos") {
     alert("Unrecognized camera position");
     return;
@@ -85,7 +104,8 @@ function parseGeoCastContent(content) {
   output.cameraPosition = cameraPosition;
 
   // ViewSlice
-  parts = arrayOfLines[i++].split(' ');
+  i = skipCommentLines(i);
+  parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "ViewSlice") {
     alert("Unrecognized ViewSlice tag");
     return;
@@ -94,13 +114,14 @@ function parseGeoCastContent(content) {
   output.viewSlice_Size = parseFloat(parts[4]);
 
   // ModelviewMatrix
-  if (arrayOfLines[i++] != "ModelviewMatrix") {
+  i = skipCommentLines(i);
+  if (arrayOfLines[i++].trim() != "ModelviewMatrix") {
     alert("Unrecognized MVM type");
     return;
   }
   output.modelviewMatrix = [];
   var readMatrixRow = function(line) {
-    parts = line.split(' ');
+    parts = line.trim().split(' ');
     output.modelviewMatrix.push(parseFloat(parts[0]));
     output.modelviewMatrix.push(parseFloat(parts[1]));
     output.modelviewMatrix.push(parseFloat(parts[2]));
@@ -111,25 +132,56 @@ function parseGeoCastContent(content) {
   }
 
   // DataProject
-  parts = arrayOfLines[i++].split(' ');
+  i = skipCommentLines(i);
+  parts = arrayOfLines[i++].trim().split(' ');
   if (parts[0] != "DataProject") {
     alert("Unrecognized DataProject tag");
     return;
   }
   output.dataProject = parts[1];
-  if (parts[2] != "WindowSize") {
-    alert("Unrecognized WindowSize tag");
+  if (output.dataProject == "Ortho") {
+    if (parts[2] != "WindowSize") {
+      alert("Unrecognized WindowSize tag");
+      return;
+    }
+    output.windowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
+    if (parts[5] != "ProjRange") {
+      alert("Unrecognized ProjRange tag");
+      return;
+    }
+    output.projRange = [parseFloat(parts[6]), parseFloat(parts[7])];
+  } else if (output.dataProject == "Perspective") {
+    if (parts[2] != "Fovy") {
+      alert("Unrecognized Fovy tag");
+      return;
+    }
+    output.Fovy = parseFloat(parts[3]);
+    if (parts[4] != "Aspect") {
+      alert("Unrecognized Aspect tag");
+      return;
+    }
+    output.Aspect = parseFloat(parts[5]);
+    if (parts[6] != "ClipRange") {
+      alert("Unrecognized ClipRange tag");
+      return;
+    }
+    output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];    
+  } else {
+    alert("Unrecognized DataProject camera type");
     return;
   }
-  output.windowSize = [parseFloat(parts[3]), parseFloat(parts[4])];
-  if (parts[5] != "ProjRange") {
-    alert("Unrecognized ProjRange tag");
-    return;
+
+  // WorldSpaceDepth - optional
+  output.worldSpaceDepth = false;
+  i = skipCommentLines(i);
+  var line = arrayOfLines[i].trim();
+  if (line == "WorldSpaceDepth") {
+    output.worldSpaceDepth = true;
+    ++i;
   }
-  output.projRange = [parseFloat(parts[6]), parseFloat(parts[7])];
 
   // ZDataRange
-  parts = arrayOfLines[i++].split(' ');
+  parts = arrayOfLines[i].trim().split(' ');
   if (parts[0] != "ZDataRange") {
     alert("Unrecognized ZDataRange tag");
     return;
