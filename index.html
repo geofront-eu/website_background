@@ -15,8 +15,8 @@
     varying vec4 pass_discardFlag;
 
     void main(void) {
-      if(pass_discardFlag.a < 0.999)
-        discard;
+      //if(pass_discardFlag.a < 0.999)
+      //  discard;
       gl_FragColor = pass_color;
     }
   </script>
@@ -226,7 +226,7 @@
       viewLatticeProgram.texColorMapSampler = gl.getUniformLocation(viewLatticeProgram, "texColorMapSampler");
     }
 
-    var sceneFrames = 100; // 100 frames
+    var sceneFrames = 1; // 100 frames
     var geocastObjects = [];
 
     function formatNumberWithLeadingZeros(num, size) {
@@ -321,8 +321,8 @@
       if (mouseDownElementId == "canvas") { // Canvas handling        
         var newRotationMatrix = mat4.create();
         mat4.identity(newRotationMatrix);
-        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaX / 10), [0, 1, 0]);
-        mat4.rotate(newRotationMatrix, newRotationMatrix, degToRad(deltaY / 10), [0, 0, 1]);
+        mat4.rotate(newRotationMatrix, newRotationMatrix, -degToRad(deltaX / 10), [1, 0, 0]);
+        mat4.rotate(newRotationMatrix, newRotationMatrix, -degToRad(deltaY / 10), [0, 1, 0]);
         mat4.multiply(sceneRotationMatrix, newRotationMatrix, sceneRotationMatrix);
       }
 
@@ -338,9 +338,9 @@
       // Update and set uniforms for the view
       var mm = mat4.create();
       mat4.identity(mm);
-      mat4.lookAt(modelViewMatrix, /* eye */ [1.5, 1.3, 0.4], /* center */ [0.5, 0.5, 0], /* up */ [0, 1, 0]);
-      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
-      mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
+      mat4.lookAt(modelViewMatrix, /* eye */ [0, 40, 0], /* center */ [-20, 0, -44], /* up */ [1, 0, 0]);
+      //mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
+      //mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
       
       mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -370,6 +370,24 @@
       mat4.invert(inversePr, persp);
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
         inversePr);
+
+      // Adjustment - temporary code
+      var realCenter = vec4.fromValues(0.5, 0.5, 0, 1);
+      var finalmat = mat4.create();
+      //mat4.multiply(finalmat, finalmat, modelViewMatrix);
+      mat4.multiply(finalmat, finalmat, inverseMV);
+      mat4.multiply(finalmat, finalmat, inversePr);
+      vec4.transformMat4(realCenter, realCenter, finalmat);      
+      realCenter[0] /= realCenter[3];
+      realCenter[1] /= realCenter[3];
+      realCenter[2] /= realCenter[3];
+      realCenter[3] = 1.0;
+      mat4.lookAt(modelViewMatrix, /* eye */ [realCenter[0], realCenter[1], realCenter[2]], 
+        /* center */ [realCenter[0], realCenter[1]- 10, realCenter[2]], /* up */ [1, 0, 0]);
+      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
+      gl.uniformMatrix4fv(viewLatticeProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
+        modelViewMatrix);
+
 
       gl.uniform2fv(viewLatticeProgram.uGeoCastClipRange, geocastObjects[0].ClipRange);
 
