@@ -11,7 +11,7 @@
     precision highp float;
 
     void main(void) {
-      // TODO
+      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
     }
   </script>
   <script id="view-lattice-shader-vs" type="x-shader/x-vertex">
@@ -23,12 +23,15 @@
 
     uniform mat4 uGeoCastMVMatrix;
     uniform mat4 uGeoCastProjMatrix;
+    uniform mat4 uGeoCastMVMatrix_Inverse;
+    uniform mat4 uGeoCastProjMatrix_Inverse;
 
     uniform sampler2D texDepthMapSampler;
     uniform sampler2D texColorMapSampler;
 
     void main(void) {
-      // TODO
+      vec4 worldpos = uGeoCastMVMatrix_Inverse * uGeoCastProjMatrix_Inverse * vec4(aPosition.x, aPosition.y, 0.5, 1);
+      gl_Position = uViewProjMatrix * uViewMVMatrix * worldpos;
     }
   </script>
   
@@ -191,6 +194,8 @@
       viewLatticeProgram.uViewProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uViewProjMatrix");
       viewLatticeProgram.uGeoCastMVMatrix = gl.getUniformLocation(viewLatticeProgram, "uGeoCastMVMatrix");
       viewLatticeProgram.uGeoCastProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uGeoCastProjMatrix");
+      viewLatticeProgram.uGeoCastMVMatrix_Inverse = gl.getUniformLocation(viewLatticeProgram, "uGeoCastMVMatrix_Inverse");
+      viewLatticeProgram.uGeoCastProjMatrix_Inverse = gl.getUniformLocation(viewLatticeProgram, "uGeoCastProjMatrix_Inverse");
       viewLatticeProgram.aPosition = gl.getAttribLocation(viewLatticeProgram, "aPosition");      
       gl.enableVertexAttribArray(viewLatticeProgram.aPosition);
       viewLatticeProgram.texDepthMapSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
@@ -332,6 +337,15 @@
       mat4.perspective(persp, degToRad(geocastObjects[0].Fovy), geocastObjects[0].Aspect, geocastObjects[0].ClipRange[0], geocastObjects[0].ClipRange[1]);
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
         persp);
+      // Set inverse matrices computed on the CPU
+      var inverseMV = mat4.create();
+      var inversePr = mat4.create();
+      mat4.invert(inverseMV, geocastObjects[0].modelviewMatrix);
+      gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
+        inverseMV);
+      mat4.invert(inversePr, persp);
+      gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
+        inversePr);
 
       // Update and set texture samplers
       gl.activeTexture(gl.TEXTURE0);
