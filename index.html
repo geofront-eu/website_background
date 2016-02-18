@@ -10,8 +10,14 @@
   <script id="view-lattice-shader-fs" type="x-shader/x-fragment">
     precision highp float;
 
+    varying vec4 pass_aPosition;
+    varying vec4 pass_color;
+    varying vec4 pass_discardFlag;
+
     void main(void) {
-      gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+      if(pass_discardFlag.a < 0.999)
+        discard;
+      gl_FragColor = pass_color;
     }
   </script>
   <script id="view-lattice-shader-vs" type="x-shader/x-vertex">
@@ -25,12 +31,29 @@
     uniform mat4 uGeoCastProjMatrix;
     uniform mat4 uGeoCastMVMatrix_Inverse;
     uniform mat4 uGeoCastProjMatrix_Inverse;
+    uniform vec2 uGeoCastClipRange;
 
     uniform sampler2D texDepthMapSampler;
     uniform sampler2D texColorMapSampler;
 
+    varying vec4 pass_aPosition;
+    varying vec4 pass_color;
+    varying vec4 pass_discardFlag;
+
     void main(void) {
-      vec4 worldpos = uGeoCastMVMatrix_Inverse * uGeoCastProjMatrix_Inverse * vec4(aPosition.x, aPosition.y, 0.5, 1);
+      pass_aPosition = vec4(aPosition.rgb, 1.0);
+
+      vec4 depth = texture2D(texDepthMapSampler, aPosition.xy);
+      pass_color = texture2D(texColorMapSampler, aPosition.xy);
+
+      vec4 depth_camspace;  // purpose: "image" a pixel of depth Z (its view vector) into camera space
+      depth_camspace = uGeoCastProjMatrix * vec4(0.0, 0.0, mix(-uGeoCastClipRange.x, -uGeoCastClipRange.y, depth.x), 1.0);
+
+      float model_depth = depth_camspace.z / depth_camspace.w;
+      // Discard background depths
+      pass_discardFlag = vec4(1.0,1.0,1.0, (model_depth < 0.999) ? 1.0 : 0.0);
+
+      vec4 worldpos = uGeoCastMVMatrix_Inverse * uGeoCastProjMatrix_Inverse * vec4(aPosition.x, aPosition.y,  model_depth, 1);
       gl_Position = uViewProjMatrix * uViewMVMatrix * worldpos;
     }
   </script>
@@ -196,6 +219,7 @@
       viewLatticeProgram.uGeoCastProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uGeoCastProjMatrix");
       viewLatticeProgram.uGeoCastMVMatrix_Inverse = gl.getUniformLocation(viewLatticeProgram, "uGeoCastMVMatrix_Inverse");
       viewLatticeProgram.uGeoCastProjMatrix_Inverse = gl.getUniformLocation(viewLatticeProgram, "uGeoCastProjMatrix_Inverse");
+      viewLatticeProgram.uGeoCastClipRange = gl.getUniformLocation(viewLatticeProgram, "uGeoCastClipRange");
       viewLatticeProgram.aPosition = gl.getAttribLocation(viewLatticeProgram, "aPosition");      
       gl.enableVertexAttribArray(viewLatticeProgram.aPosition);
       viewLatticeProgram.texDepthMapSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
@@ -318,7 +342,7 @@
       mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
       mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
       
-      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50.0);
+      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
@@ -346,6 +370,8 @@
       mat4.invert(inversePr, persp);
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
         inversePr);
+
+      gl.uniform2fv(viewLatticeProgram.uGeoCastClipRange, geocastObjects[0].ClipRange);
 
       // Update and set texture samplers
       gl.activeTexture(gl.TEXTURE0);
