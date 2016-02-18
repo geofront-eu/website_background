@@ -48,7 +48,7 @@ function readGeoCastFile(filePath, callback) {
  *    projRange = [0.10, 200.0];
  *    ---------------------------
  *    dataProject = "Perspective";
- *    Fovy = 45.0;
+ *    Fovy = 45.0; (degrees)
  *    Aspect = 1.0;
  *    ClipRange = [1.0, 200.0];
  *    --- end of varying part ---

@@ -10,30 +10,25 @@
   <script id="view-lattice-shader-fs" type="x-shader/x-fragment">
     precision highp float;
 
-    uniform sampler2D texDepthMapSampler;
-
-    varying vec3 pass_Pos;
-
     void main(void) {
-      vec4 color = texture2D(texDepthMapSampler, pass_Pos.xy);
-      gl_FragColor = color;
+      // TODO
     }
   </script>
   <script id="view-lattice-shader-vs" type="x-shader/x-vertex">
     precision highp float;
     attribute vec3 aPosition;
 
-    uniform mat4 uMVMatrix;
-    uniform mat4 uProjMatrix;
-    uniform sampler2D texDepthMapSampler;
+    uniform mat4 uViewMVMatrix;
+    uniform mat4 uViewProjMatrix;
 
-    varying vec3 pass_Pos;
+    uniform mat4 uGeoCastMVMatrix;
+    uniform mat4 uGeoCastProjMatrix;
+
+    uniform sampler2D texDepthMapSampler;
+    uniform sampler2D texColorMapSampler;
 
     void main(void) {
-      pass_Pos = aPosition;
-      vec4 color = texture2D(texDepthMapSampler, pass_Pos.xy);
-      pass_Pos.z = 1.0 - ((color.r + color.g + color.b) / 3.0);
-      gl_Position = uProjMatrix * uMVMatrix * vec4(pass_Pos, 1.0);
+      // TODO
     }
   </script>
   
@@ -192,11 +187,14 @@
           alert("Could not initialize shaders");
       gl.useProgram(viewLatticeProgram);
       // Bind uniforms and attributes      
-      viewLatticeProgram.uProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uProjMatrix");
-      viewLatticeProgram.uMVMatrix = gl.getUniformLocation(viewLatticeProgram, "uMVMatrix");
+      viewLatticeProgram.uViewMVMatrix = gl.getUniformLocation(viewLatticeProgram, "uViewMVMatrix");
+      viewLatticeProgram.uViewProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uViewProjMatrix");
+      viewLatticeProgram.uGeoCastMVMatrix = gl.getUniformLocation(viewLatticeProgram, "uGeoCastMVMatrix");
+      viewLatticeProgram.uGeoCastProjMatrix = gl.getUniformLocation(viewLatticeProgram, "uGeoCastProjMatrix");
       viewLatticeProgram.aPosition = gl.getAttribLocation(viewLatticeProgram, "aPosition");      
       gl.enableVertexAttribArray(viewLatticeProgram.aPosition);
-      viewLatticeProgram.texFieldSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
+      viewLatticeProgram.texDepthMapSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
+      viewLatticeProgram.texColorMapSampler = gl.getUniformLocation(viewLatticeProgram, "texColorMapSampler");
     }
 
     var sceneFrames = 100; // 100 frames
@@ -305,9 +303,10 @@
 
     function drawScene() {
 
-      if(numberOfSafeToRenderTextures < sceneFrames)
+      if(numberOfSafeToRenderTextures == 0)
         return;
 
+      // Update and set uniforms for the view
       var mm = mat4.create();
       mat4.identity(mm);
       mat4.lookAt(modelViewMatrix, /* eye */ [1.5, 1.3, 0.4], /* center */ [0.5, 0.5, 0], /* up */ [0, 1, 0]);
@@ -320,14 +319,29 @@
       gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
       gl.useProgram(viewLatticeProgram);
 
-      gl.uniformMatrix4fv(viewLatticeProgram.uMVMatrix, false /* WebGL supports column-major only */, 
+      gl.uniformMatrix4fv(viewLatticeProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
         modelViewMatrix);
-      gl.uniformMatrix4fv(viewLatticeProgram.uProjMatrix, false /* WebGL supports column-major only */, 
+      gl.uniformMatrix4fv(viewLatticeProgram.uViewProjMatrix, false /* WebGL supports column-major only */, 
         perspectiveMatrix);
 
+      // Update and set uniforms for the GeoCast scene
+      gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
+        geocastObjects[0].modelviewMatrix);
+      // Get a perspective matrix from the geocast structure
+      var persp = mat4.create();
+      mat4.perspective(persp, degToRad(geocastObjects[0].Fovy), geocastObjects[0].Aspect, geocastObjects[0].ClipRange[0], geocastObjects[0].ClipRange[1]);
+      gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
+        persp);
+
+      // Update and set texture samplers
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, depthMapTextures[0]);
-      gl.uniform1i(viewLatticeProgram.texFieldSampler, 0);
+      gl.uniform1i(viewLatticeProgram.texDepthMapSampler, 0);
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, colorMapTextures[0]);
+      gl.uniform1i(viewLatticeProgram.texColorMapSampler, 1);
+
+      // Bind VBO, set the vertex attribute data and render
       gl.bindBuffer(gl.ARRAY_BUFFER, lattice_data);
       gl.vertexAttribPointer(viewLatticeProgram.aPosition, 3, gl.FLOAT, false, 0, 0);      
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, lattice_data.n_of_vertices);      
