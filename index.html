@@ -51,17 +51,49 @@
 
       float model_depth = depth_camspace.z / depth_camspace.w;
       // Discard background depths
-      pass_discardFlag = vec4(1.0,1.0,1.0, (model_depth < 0.999) ? 1.0 : 0.0);
+      pass_discardFlag = vec4(1.0, 1.0, 1.0, (model_depth < 0.999) ? 1.0 : 0.0);
 
       vec4 worldpos = uGeoCastMVMatrix_Inverse * uGeoCastProjMatrix_Inverse * vec4(aPosition.x, aPosition.y,  model_depth, 1);
       gl_Position = uViewProjMatrix * uViewMVMatrix * worldpos;
     }
   </script>
+
+  <script id="floor-grid-shader-fs" type="x-shader/x-fragment">
+    precision highp float;
+
+    varying vec3 pass_aPosition;
+
+    void main(void) {
+      vec2 pitch = vec2(10.0, 10.0);
+
+      float scaleFactor = 20.0;
+      float offX = scaleFactor * pass_aPosition.x;
+      float offY = scaleFactor * pass_aPosition.z;
+
+      if (int(mod(offX, pitch[0])) == 0 || int(mod(offY, pitch[1])) == 0)
+        gl_FragColor = vec4(0.0, 1.0, 0.0, 0.5);
+      else
+        discard;
+    }
+  </script>
+  <script id="floor-grid-shader-vs" type="x-shader/x-vertex">
+    precision highp float;
+    attribute vec3 aPosition;
+
+    uniform mat4 uViewMVMatrix;
+    uniform mat4 uViewProjMatrix;
+
+    varying vec3 pass_aPosition;
+
+    void main(void) {
+      pass_aPosition = aPosition;
+      vec4 pos = uViewProjMatrix * uViewMVMatrix * vec4(aPosition.xyz, 1.0);
+      gl_Position = pos;
+    }
+  </script>
   
   <script type="text/javascript">
     var gl; // gl instance
-    var fptex_extension;
-    var fptextlinear_extension;
 
     // Camera matrices
     var perspectiveMatrix = mat4.create();
@@ -76,17 +108,6 @@
       } catch (e) {}
       if (!gl) {
         alert("Could not initialize WebGL");
-      }
-
-      fptex_extension = gl.getExtension('OES_texture_float'); // Enable floating point textures
-      if (fptex_extension == null) {
-        alert("Floating point textures extension not supported");
-        return;
-      }
-      fptextlinear_extension = gl.getExtension('OES_texture_float_linear'); // Enable floating point textures linear filtering
-      if (fptextlinear_extension == null) {
-        alert("Floating point textures linear filtering extension not supported");
-        return;
       }
 
       setupGeometries();
@@ -152,6 +173,7 @@
     }
 
     var lattice_data;
+    var floor_grid_quad_data;
 
     function setupGeometries() {
       // Set up a VBO with the field quad data        
@@ -161,11 +183,32 @@
       var vbo_data = generateLattice();
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
       lattice_data.n_of_vertices = vbo_data.length / 3; // Number of vertices to use
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+      // Set up a VBO with the floor quad data
+      floor_grid_quad_data = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, floor_grid_quad_data);
+      vbo_data = [
+        -100.0, 0.0, -100.0,
+        -100.0, 0.0, 100.0,
+        100.0, 0.0, 100.0,
+        100.0, 0.0, -100.0
+      ];
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
+      floor_grid_quad_data.indices = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, floor_grid_quad_data.indices);
+      var indices = [
+        0, 1, 2,
+        0, 2, 3
+      ];
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+      floor_grid_quad_data.indices_length = indices.length;
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
 
     var viewLatticeProgram;
+    var drawGridProgram;
 
     // Utility function to get and compile a shader
     function getShader(gl, id) {
@@ -224,6 +267,21 @@
       gl.enableVertexAttribArray(viewLatticeProgram.aPosition);
       viewLatticeProgram.texDepthMapSampler = gl.getUniformLocation(viewLatticeProgram, "texDepthMapSampler");
       viewLatticeProgram.texColorMapSampler = gl.getUniformLocation(viewLatticeProgram, "texColorMapSampler");
+
+      vertexShader = getShader(gl, "floor-grid-shader-vs");
+      fragmentShader = getShader(gl, "floor-grid-shader-fs");
+      drawGridProgram = gl.createProgram();
+      gl.attachShader(drawGridProgram, vertexShader);
+      gl.attachShader(drawGridProgram, fragmentShader);
+      gl.linkProgram(drawGridProgram);
+      if (!gl.getProgramParameter(drawGridProgram, gl.LINK_STATUS))
+          alert("Could not initialize shaders");
+      gl.useProgram(drawGridProgram);
+      // Bind uniforms and attributes      
+      drawGridProgram.uViewMVMatrix = gl.getUniformLocation(drawGridProgram, "uViewMVMatrix");
+      drawGridProgram.uViewProjMatrix = gl.getUniformLocation(drawGridProgram, "uViewProjMatrix");
+      drawGridProgram.aPosition = gl.getAttribLocation(drawGridProgram, "aPosition");      
+      gl.enableVertexAttribArray(drawGridProgram.aPosition);
     }
 
     var sceneFrames = 1; // 100 frames
@@ -335,17 +393,39 @@
       if(numberOfSafeToRenderTextures == 0)
         return;
 
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+      // -------------- Render floor grid -------------
+
+      mat4.identity(modelViewMatrix);
+      mat4.identity(perspectiveMatrix);
+      mat4.lookAt(modelViewMatrix, /* eye */ [0, 6, -10], /* center */ [0, 0, 0], /* up */ [0, 1, 0]);
+      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 5000.0);      
+      gl.useProgram(drawGridProgram);
+      gl.uniformMatrix4fv(drawGridProgram.uViewMVMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
+      gl.uniformMatrix4fv(drawGridProgram.uViewProjMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
+      gl.bindBuffer(gl.ARRAY_BUFFER, floor_grid_quad_data);
+      gl.vertexAttribPointer(drawGridProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, floor_grid_quad_data.indices);
+      gl.drawElements(gl.TRIANGLES, floor_grid_quad_data.indices_length, gl.UNSIGNED_SHORT, 0)
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+
+      // ----------- Render model projection -----------
+
       // Update and set uniforms for the view
       var mm = mat4.create();
       mat4.identity(mm);
-      mat4.lookAt(modelViewMatrix, /* eye */ [0, 40, 0], /* center */ [-20, 0, -44], /* up */ [1, 0, 0]);
-      //mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
-      //mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
+      mat4.lookAt(modelViewMatrix, /* eye */ [0, 0, -10], /* center */ [0, 0, 0], /* up */ [0, 1, 0]);
+      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
+      mat4.translate(modelViewMatrix, modelViewMatrix, [-0.5, -0.5, 0]); // Renders the rotation on the vertical axis of the grid
       
       mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 100.0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      //gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
+      //gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);      
       gl.useProgram(viewLatticeProgram);
 
       gl.uniformMatrix4fv(viewLatticeProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
@@ -371,23 +451,6 @@
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
         inversePr);
 
-      // Adjustment - temporary code
-      var realCenter = vec4.fromValues(0.5, 0.5, 0, 1);
-      var finalmat = mat4.create();
-      //mat4.multiply(finalmat, finalmat, modelViewMatrix);
-      mat4.multiply(finalmat, finalmat, inverseMV);
-      mat4.multiply(finalmat, finalmat, inversePr);
-      vec4.transformMat4(realCenter, realCenter, finalmat);      
-      realCenter[0] /= realCenter[3];
-      realCenter[1] /= realCenter[3];
-      realCenter[2] /= realCenter[3];
-      realCenter[3] = 1.0;
-      mat4.lookAt(modelViewMatrix, /* eye */ [realCenter[0], realCenter[1], realCenter[2]], 
-        /* center */ [realCenter[0], realCenter[1]- 10, realCenter[2]], /* up */ [1, 0, 0]);
-      mat4.multiply(modelViewMatrix, modelViewMatrix, sceneRotationMatrix);
-      gl.uniformMatrix4fv(viewLatticeProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
-        modelViewMatrix);
-
 
       gl.uniform2fv(viewLatticeProgram.uGeoCastClipRange, geocastObjects[0].ClipRange);
 
@@ -401,8 +464,8 @@
 
       // Bind VBO, set the vertex attribute data and render
       gl.bindBuffer(gl.ARRAY_BUFFER, lattice_data);
-      gl.vertexAttribPointer(viewLatticeProgram.aPosition, 3, gl.FLOAT, false, 0, 0);      
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, lattice_data.n_of_vertices);      
+      gl.vertexAttribPointer(viewLatticeProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, lattice_data.n_of_vertices);
     }
     
     function paintLoop() {
