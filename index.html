@@ -15,8 +15,8 @@
     varying vec4 pass_discardFlag;
 
     void main(void) {
-      //if(pass_discardFlag.a < 0.999)
-      //  discard;
+      if(pass_discardFlag.a < 0.999)
+        discard;
       gl_FragColor = pass_color;
     }
   </script>
@@ -364,8 +364,9 @@
       gl.enableVertexAttribArray(cameraFrustumLinesProgram.aPosition);
     }
 
-    var sceneFrames = 1; // 100 frames
+    var sceneFrames = 100; // 100 frames
     var geocastObjects = [];
+    var selectedFrame = 0;
 
     function formatNumberWithLeadingZeros(num, size) {
       var s = "000000000" + num;
@@ -387,7 +388,7 @@
 
     function setupTextures() {
 
-      var loadTextureFromFile = function(pngPath) {
+      var loadTextureFromFile = function(pngPath, isStartingImage) {
         var texture = gl.createTexture();
         texture.image = new Image();
         texture.image.onload = function () {
@@ -397,17 +398,19 @@
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
           gl.bindTexture(gl.TEXTURE_2D, null);
-          ++numberOfSafeToRenderTextures;
+          if (texture.isStartingImage == true)
+            ++numberOfSafeToRenderTextures;
         }
         texture.image.src = pngPath;
+        texture.isStartingImage = isStartingImage;
         return texture;
       };
 
       for (var i = 1; i <= sceneFrames; ++i) {
         var imageNumber = formatNumberWithLeadingZeros(i, 4);
-        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png");
+        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png", i == 1);
         depthMapTextures.push(depthMap);
-        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png");
+        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png", i == 1);
         colorMapTextures.push(colorMap);
       }
     }
@@ -428,6 +431,19 @@
       canvas.onmousemove = handleMouseMove;
       canvas.addEventListener('mouseout', onMouseOutOfCanvas, true); // Stop canvas input if mouse gets out of it
       canvas.onwheel = handleMouseWheel;
+      document.onkeydown = handleKeyDown;
+    }
+
+    function handleKeyDown(event) {
+      var key = event.keyCode || event.which;
+      switch (key) {
+        case 39: { // Right keyboard arrow
+          selectedFrame = Math.min(sceneFrames - 1, selectedFrame + 1);
+        } break;
+        case 37: { // Left keyboard arrow
+          selectedFrame = Math.max(0, selectedFrame - 1);
+        } break;
+      }
     }
 
     function onMouseOutOfCanvas(event) {
@@ -492,7 +508,7 @@
 
     function drawScene() {
 
-      if(numberOfSafeToRenderTextures == 0)
+      if(numberOfSafeToRenderTextures < 2) // Both a color and depth starting image need to be loaded
         return;
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -530,16 +546,17 @@
 
       // Update and set uniforms for the GeoCast scene
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
-        geocastObjects[0].modelviewMatrix);
+        geocastObjects[selectedFrame].modelviewMatrix);
       // Get a perspective matrix from the geocast structure
       var persp = mat4.create();
-      mat4.perspective(persp, degToRad(geocastObjects[0].Fovy), geocastObjects[0].Aspect, geocastObjects[0].ClipRange[0], geocastObjects[0].ClipRange[1]);
+      mat4.perspective(persp, degToRad(geocastObjects[selectedFrame].Fovy), geocastObjects[selectedFrame].Aspect, 
+                       geocastObjects[selectedFrame].ClipRange[0], geocastObjects[selectedFrame].ClipRange[1]);
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
         persp);
       // Set inverse matrices computed on the CPU
       var inverseMV = mat4.create();
       var inversePr = mat4.create();      
-      mat4.invert(inverseMV, geocastObjects[0].modelviewMatrix);
+      mat4.invert(inverseMV, geocastObjects[selectedFrame].modelviewMatrix);
       mat4.invert(inversePr, persp);
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
         inverseMV);      
@@ -557,14 +574,14 @@
         perspectiveMatrix);
 
 
-      gl.uniform2fv(viewLatticeProgram.uGeoCastClipRange, geocastObjects[0].ClipRange);
+      gl.uniform2fv(viewLatticeProgram.uGeoCastClipRange, geocastObjects[selectedFrame].ClipRange);
 
       // Update and set texture samplers
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, depthMapTextures[0]);
+      gl.bindTexture(gl.TEXTURE_2D, depthMapTextures[selectedFrame]);
       gl.uniform1i(viewLatticeProgram.texDepthMapSampler, 0);
       gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, colorMapTextures[0]);
+      gl.bindTexture(gl.TEXTURE_2D, colorMapTextures[selectedFrame]);
       gl.uniform1i(viewLatticeProgram.texColorMapSampler, 1);
 
       // Bind VBO, set the vertex attribute data and render
@@ -586,7 +603,7 @@
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uViewProjMatrix, false /* WebGL supports column-major only */, 
         perspectiveMatrix);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
-        geocastObjects[0].modelviewMatrix);
+        geocastObjects[selectedFrame].modelviewMatrix);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
         persp);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
