@@ -244,19 +244,26 @@
         1.0, 1.0, -1.0,
         1.0, 1.0, 1.0,
         -1.0, 1.0, 1.0,
-        -1.0, 1.0, -1.0,
         1.0, -1.0, 1.0,
-        -1.0, -1.0, 1.0,
-        -1.0, -1.0, -1.0,
-        -1.0, 1.0, 1.0,
-        -1.0, -1.0, 1.0,
-        -1.0, -1.0, -1.0,
-        1.0, 1.0, 1.0,
-        1.0, -1.0, 1.0
+        -1.0, -1.0, 1.0
       ];
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
-      cameraFrustumLines.n_of_vertices = vbo_data.length / 3; // Number of vertices to use
+      cameraFrustumLines.indices = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cameraFrustumLines.indices);
+      indices = [
+        0, 1,
+        0, 2,
+        0, 3,
+        0, 4,
+        1, 2,
+        2, 4,
+        4, 3,
+        3, 1
+      ];
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+      cameraFrustumLines.indices_length = indices.length;
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
 
     var viewLatticeProgram;
@@ -511,7 +518,7 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, floor_grid_quad_data);
       gl.vertexAttribPointer(drawGridProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, floor_grid_quad_data.indices);
-      gl.drawElements(gl.TRIANGLES, floor_grid_quad_data.indices_length, gl.UNSIGNED_SHORT, 0)
+      gl.drawElements(gl.TRIANGLES, floor_grid_quad_data.indices_length, gl.UNSIGNED_SHORT, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);      
 
@@ -571,6 +578,7 @@
       // Draw projectors extents lines
       gl.useProgram(cameraFrustumLinesProgram);
       // Bind VBO, set the vertex attribute data and render
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cameraFrustumLines.indices);
       gl.bindBuffer(gl.ARRAY_BUFFER, cameraFrustumLines);
       gl.vertexAttribPointer(cameraFrustumLinesProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
@@ -585,7 +593,9 @@
         inverseMV);      
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
         inversePr);
-      gl.drawArrays(gl.LINE_STRIP, 0, cameraFrustumLines.n_of_vertices);
+      gl.drawElements(gl.LINES, cameraFrustumLines.indices_length, gl.UNSIGNED_SHORT, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
     
     function paintLoop() {
