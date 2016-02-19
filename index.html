@@ -9,6 +9,7 @@
 
   <script id="view-lattice-shader-fs" type="x-shader/x-fragment">
     precision highp float;
+    precision mediump float;
 
     varying vec4 pass_aPosition;
     varying vec4 pass_color;
@@ -22,6 +23,8 @@
   </script>
   <script id="view-lattice-shader-vs" type="x-shader/x-vertex">
     precision highp float;
+    precision mediump float;
+
     attribute vec3 aPosition;
 
     uniform mat4 uViewMVMatrix;
@@ -47,17 +50,17 @@
       pass_color = texture2D(texColorMapSampler, aPosition.xy);
 
       vec4 depth_camspace;  // purpose: "image" a pixel of depth Z (its view vector) into camera space
-      depth_camspace = uGeoCastProjMatrix * vec4(0.0, 0.0, mix(-uGeoCastClipRange.x, -uGeoCastClipRange.y, depth.x), 1.0);
+      depth_camspace = uGeoCastProjMatrix * vec4(0.0, 0.0, mix(-uGeoCastClipRange.x, -uGeoCastClipRange.y, depth.x), 1);
 
       float model_depth = depth_camspace.z / depth_camspace.w;
       // Discard background depths
-      pass_discardFlag = vec4(1.0, 1.0, 1.0, (model_depth < 0.999) ? 1.0 : 0.0);
+      pass_discardFlag = vec4(1.0, 1.0, 1.0, (depth.x == 1.0) ? 0.0 : 1.0);
 
       // Lattice has coords [0;1], this doesn't use the full screen extents of the projector [-1;1]. Rescale
       vec2 latticePos = vec2(aPosition.x, aPosition.y);
       latticePos = latticePos * 2.0 - 1.0;
 
-      vec4 worldpos = uGeoCastProjMatrix_Inverse * vec4(latticePos.xy,  model_depth, 1);
+      vec4 worldpos = uGeoCastMVMatrix * uGeoCastProjMatrix_Inverse * vec4(latticePos.xy,  model_depth, 1);
       gl_Position = uViewProjMatrix * uViewMVMatrix * worldpos;
     }
   </script>
@@ -84,7 +87,7 @@
 
     void main(void) {
 
-      gl_Position = uViewProjMatrix * uViewMVMatrix * (uGeoCastProjMatrix_Inverse *  vec4(aPosition.xyz, 1.0));
+      gl_Position = uViewProjMatrix * uViewMVMatrix * (uGeoCastMVMatrix * uGeoCastProjMatrix_Inverse *  vec4(aPosition.xyz, 1.0));
     }
   </script>
 
@@ -98,8 +101,8 @@
     void main(void) {
 
       if (abs(mod(pass_aPosition.x, 3.0) - 0.5) < 0.15 ||
-          abs(mod(pass_aPosition.z, 3.0) - 0.5) < 0.15)
-        gl_FragColor = vec4(0.0, 0.5*sin(pass_aPosition.x*pass_aPosition.z) - cos( timeStep / 15.0 ), 0.0, 0.5);
+          abs(mod(pass_aPosition.y, 3.0) - 0.5) < 0.15)
+        gl_FragColor = vec4(0.0, 0.25*sin(pass_aPosition.x/100.0)*sin(pass_aPosition.y/100.0), 0.0, 0.5);
       else
         discard;
     }
@@ -221,10 +224,10 @@
       floor_grid_quad_data = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, floor_grid_quad_data);
       vbo_data = [
-        -100.0, 0.0, -100.0,
-        -100.0, 0.0, 100.0,
-        100.0, 0.0, 100.0,
-        100.0, 0.0, -100.0
+        -100.0, -100.0,0, 
+        -100.0, 100.0,0,
+        100.0, 100.0,0,
+        100.0, -100.0, 0
       ];
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
       floor_grid_quad_data.indices = gl.createBuffer();
@@ -415,10 +418,10 @@
       }
     }
 
-    var projectionCenter = vec3.fromValues(0, 0, -20); // The center of the projection where the camera points at all times
-    var theta = -15.0; // Degrees spherical coord
-    var phi = -15.0;   // Degrees spherical coord
-    var sphere_d = -50.0; // Start spherical distance
+    var projectionCenter = vec3.fromValues(0, 0, 0); // The center of the projection where the camera points at all times
+    var theta = 0.0; // Degrees spherical coord
+    var phi = 30.0;   // Degrees spherical coord
+    var sphere_d = 50.0; // Start spherical distance
 
     var mouseDown = false;
     var mouseDownElementId;
@@ -474,7 +477,7 @@
       var newX = event.clientX;
       var newY = event.clientY;
       var deltaX = newX - lastMouseX;
-      var deltaY = - (newY - lastMouseY);
+      var deltaY = newY - lastMouseY;
 
       if (mouseDownElementId == "canvas") { // Canvas handling
 
@@ -493,13 +496,14 @@
      
       }
 
-      lastMouseX = newX
+      lastMouseX = newX;
       lastMouseY = newY;
     }
 
     function handleMouseWheel(event) {
       // Get cross-browser wheel delta
       var delta = Math.max(-1, Math.min(1, (event.wheelDelta || -event.deltaY || -event.detail)));
+      //var delta = Math.max(-1, Math.min(1, event.wheelDelta));
  
       sphere_d += delta;
     }
@@ -521,12 +525,14 @@
 
       // Calculate camera position (eye field) according to the spherical coords
       var cameraPos = vec3.create();
-      cameraPos[0] = sphere_d * Math.sin(degToRad(theta)) ;  
-      cameraPos[1] = sphere_d * Math.sin(degToRad(phi));
-      cameraPos[2] = (theta > 90.0 && theta < 270.0 ? -1.0 : +1.0) * Math.sqrt(Math.pow(sphere_d, 2) -Math.pow(cameraPos[0], 2));
+      cameraPos[0] = sphere_d * Math.sin(degToRad(theta)) * Math.cos(degToRad(phi));  
+      cameraPos[1] = sphere_d * Math.cos(degToRad(theta)) * Math.cos(degToRad(phi));
+      cameraPos[2] = sphere_d * Math.sin(degToRad(phi));  
 
-      mat4.lookAt(modelViewMatrix, /* eye */ cameraPos, /* center */ projectionCenter, /* up */ [0, 1, 0]);
-      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 50000.0);
+      gui_prompt.innerHTML = 'TimeStep' + timeStep + ' Phi:' + phi + 'deg Theta:' + theta + 'deg sphere_d:' + sphere_d ;
+
+      mat4.lookAt(modelViewMatrix, /* eye */ cameraPos, /* center */ projectionCenter, /* up */ [0, 0, 1]);
+      mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 500.0);
       gl.useProgram(drawGridProgram);
       gl.uniformMatrix4fv(drawGridProgram.uViewMVMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
       gl.uniformMatrix4fv(drawGridProgram.uViewProjMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
@@ -624,5 +630,7 @@
 </head>
 <body onload="webGLStart();">
   <canvas id="canvas" style="border: none;" width="1200" height="800"></canvas>
+    <div id="gui_prompt"></div>
+
 </body>
 </html>
