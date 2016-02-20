@@ -122,6 +122,30 @@
       gl_Position = pos;
     }
   </script>
+
+  <script id="colorpicker-shader-fs" type="x-shader/x-fragment">
+    precision highp float;
+
+    void main(void) {
+        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+    }
+  </script>
+  <script id="colorpicker-shader-vs" type="x-shader/x-vertex">
+    precision highp float;
+    attribute vec3 aPosition;
+
+    uniform mat4 uViewMVMatrix;
+    uniform mat4 uViewProjMatrix;
+
+    uniform mat4 uGeoCastMVMatrix;
+    uniform mat4 uGeoCastProjMatrix;
+    uniform mat4 uGeoCastMVMatrix_Inverse;
+    uniform mat4 uGeoCastProjMatrix_Inverse;
+
+    void main(void) {
+      gl_Position = uViewProjMatrix * uViewMVMatrix * (uGeoCastMVMatrix * uGeoCastProjMatrix_Inverse *  vec4(aPosition.xyz, 1.0));
+    }
+  </script>
   
   <script type="text/javascript">
     var gl; // gl instance
@@ -129,6 +153,7 @@
     // Camera matrices
     var perspectiveMatrix = mat4.create();
     var modelViewMatrix = mat4.create();
+    // GeoCast camera matrices
     
     function webGLStart() {
       var canvas = document.getElementById("canvas");
@@ -143,6 +168,7 @@
 
       setupGeometries();
       setupShaderPrograms();
+      setupFramebuffers();
       setupGeoCastFiles();
       setupTextures();
       setupInput(canvas);      
@@ -208,7 +234,8 @@
 
     var lattice_data;
     var floor_grid_quad_data;
-    var cameraFrustumLines;
+    var camera_frustum_lines_data;
+    var camera_frustum_space_data;
 
     function setupGeometries() {
       // Set up a VBO with the field quad data        
@@ -241,8 +268,8 @@
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
 
-      cameraFrustumLines = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, cameraFrustumLines);
+      camera_frustum_lines_data = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, camera_frustum_lines_data);
       vbo_data = [
         1.0, 1.0, -1.0,
         1.0, 1.0, 1.0,
@@ -251,8 +278,8 @@
         -1.0, -1.0, 1.0
       ];
       gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
-      cameraFrustumLines.indices = gl.createBuffer();
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cameraFrustumLines.indices);
+      camera_frustum_lines_data.indices = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, camera_frustum_lines_data.indices);
       indices = [
         0, 1,
         0, 2,
@@ -264,7 +291,27 @@
         3, 1
       ];
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-      cameraFrustumLines.indices_length = indices.length;
+      camera_frustum_lines_data.indices_length = indices.length;
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+
+      camera_frustum_space_data = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, camera_frustum_space_data);
+      // Reuse previous vbo_data
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vbo_data), gl.STATIC_DRAW);
+      camera_frustum_space_data.indices = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, camera_frustum_space_data.indices);
+      indices = [
+        0, 1, 3,
+        0, 4, 2,
+        0, 2, 1,
+        0, 3, 4,
+        // Far plane
+        3, 1, 4,
+        1, 2, 4
+      ];
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+      camera_frustum_space_data.indices_length = indices.length;
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     }
@@ -272,6 +319,7 @@
     var viewLatticeProgram;
     var drawGridProgram;
     var cameraFrustumLinesProgram;
+    var colorPickerProgram;
 
     // Utility function to get and compile a shader
     function getShader(gl, id) {
@@ -365,10 +413,52 @@
       cameraFrustumLinesProgram.uGeoCastProjMatrix_Inverse = gl.getUniformLocation(cameraFrustumLinesProgram, "uGeoCastProjMatrix_Inverse");
       cameraFrustumLinesProgram.aPosition = gl.getAttribLocation(drawGridProgram, "aPosition");      
       gl.enableVertexAttribArray(cameraFrustumLinesProgram.aPosition);
+
+      vertexShader = getShader(gl, "colorpicker-shader-vs");
+      fragmentShader = getShader(gl, "colorpicker-shader-fs");
+      colorPickerProgram = gl.createProgram();
+      gl.attachShader(colorPickerProgram, vertexShader);
+      gl.attachShader(colorPickerProgram, fragmentShader);
+      gl.linkProgram(colorPickerProgram);
+      if (!gl.getProgramParameter(colorPickerProgram, gl.LINK_STATUS))
+          alert("Could not initialize shaders");
+      gl.useProgram(colorPickerProgram);
+      // Bind uniforms and attributes      
+      colorPickerProgram.uViewMVMatrix = gl.getUniformLocation(colorPickerProgram, "uViewMVMatrix");
+      colorPickerProgram.uViewProjMatrix = gl.getUniformLocation(colorPickerProgram, "uViewProjMatrix");
+      colorPickerProgram.uGeoCastMVMatrix = gl.getUniformLocation(colorPickerProgram, "uGeoCastMVMatrix");
+      colorPickerProgram.uGeoCastProjMatrix = gl.getUniformLocation(colorPickerProgram, "uGeoCastProjMatrix");
+      colorPickerProgram.uGeoCastMVMatrix_Inverse = gl.getUniformLocation(colorPickerProgram, "uGeoCastMVMatrix_Inverse");
+      colorPickerProgram.uGeoCastProjMatrix_Inverse = gl.getUniformLocation(colorPickerProgram, "uGeoCastProjMatrix_Inverse");
+      colorPickerProgram.aPosition = gl.getAttribLocation(drawGridProgram, "aPosition");      
+      gl.enableVertexAttribArray(colorPickerProgram.aPosition);
+    }
+
+    var colorPickerFramebuffer;
+    var colorPickerRenderTexture;
+
+    function setupFramebuffers() {
+      // Init secondary framebuffer for color picking
+      colorPickerFramebuffer = gl.createFramebuffer();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, colorPickerFramebuffer);
+      colorPickerFramebuffer.width = gl.viewportWidth;
+      colorPickerFramebuffer.height = gl.viewportHeight;
+      // This is the only texture that is set up here because related to the framebuffer
+      colorPickerRenderTexture = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, colorPickerRenderTexture);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);        
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, colorPickerFramebuffer.width, colorPickerFramebuffer.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      // Attach the texture to the framebuffer
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, colorPickerRenderTexture, 0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     }
 
     var sceneFrames = 100; // 100 frames
-    var geocastObjects = [];
+    var geocastObjects = new Array(sceneFrames);
     var selectedFrame = 0;
 
     function formatNumberWithLeadingZeros(num, size) {
@@ -376,22 +466,31 @@
       return s.substr(s.length - size);
     }
 
-    function setupGeoCastFiles() {
-      var callback = function(output) {
-        geocastObjects.push(output);
-      };      
+    function setupGeoCastFiles() {      
       for (var i = 1; i <= sceneFrames; ++i) {
+        var callback = (function(i) {
+          var index = i; // Closure capture
+          return function(output) {
+            geocastObjects[index - 1] = output;
+          }
+        })(i);
         readGeoCastFile("assets/TiltCamera/geocast/" + formatNumberWithLeadingZeros(i, 4) + ".geocast", callback);
       }
     }
 
-    var depthMapTextures = [];
-    var colorMapTextures = [];
-    var numberOfSafeToRenderTextures = 0;
+    var depthMapTextures = new Array(sceneFrames);
+    var colorMapTextures = new Array(sceneFrames);
+    var isDepthTextureSafeToRender = new Array(sceneFrames); // Booleans, set to true if it is safe to render
+    var isColorTextureSafeToRender = new Array(sceneFrames); // Ditto
 
     function setupTextures() {
 
-      var loadTextureFromFile = function(pngPath, isStartingImage) {
+      for (var i = 0; i < sceneFrames; ++i) {
+        isDepthTextureSafeToRender[i] = false;
+        isColorTextureSafeToRender[i] = false;
+      }
+
+      var loadTextureFromFile = function(pngPath, isDepthTexture, index) {
         var texture = gl.createTexture();
         texture.image = new Image();
         texture.image.onload = function () {
@@ -401,20 +500,21 @@
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
           gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
           gl.bindTexture(gl.TEXTURE_2D, null);
-          if (texture.isStartingImage == true)
-            ++numberOfSafeToRenderTextures;
+          if (isDepthTexture == true)
+            isDepthTextureSafeToRender[index - 1] = true;
+          else
+            isColorTextureSafeToRender[index - 1] = true;
         }
         texture.image.src = pngPath;
-        texture.isStartingImage = isStartingImage;
         return texture;
       };
 
       for (var i = 1; i <= sceneFrames; ++i) {
         var imageNumber = formatNumberWithLeadingZeros(i, 4);
-        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png", i == 1);
-        depthMapTextures.push(depthMap);
-        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png", i == 1);
-        colorMapTextures.push(colorMap);
+        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png", true, i);
+        depthMapTextures[i - 1] = depthMap;
+        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png", false, i);
+        colorMapTextures[i - 1] = colorMap;
       }
     }
 
@@ -427,6 +527,8 @@
     var mouseDownElementId;
     var lastMouseX = null;
     var lastMouseY = null;
+    var mouseDownAction = null; // Either "RotateScene" or "TimelineDrag"
+    var dragDeltas = 0; // Accumulates timeline drag deltas from the mouse (allows a smoother scroll)
 
     function setupInput(canvas) {
       canvas.onmousedown = handleMouseDown;
@@ -462,6 +564,21 @@
       mouseDownElementId = event.target ? event.target.id : event.srcElement.id;
       lastMouseX = event.clientX;
       lastMouseY = event.clientY;
+
+      // Execute color picking
+      var color = executeColorPicking(lastMouseX, lastMouseY);
+
+      var array_is_same = function(arr1, arr2) {
+        return arr1.length == arr2.length && arr1.every(function(element, index) {
+          return element === arr2[index];
+        });
+      };
+      if (array_is_same(color, [255, 0, 0, 255])) { // Camera
+        mouseDownAction = "TimelineDrag";
+      } else {
+        // Click outside active camera frustum
+        mouseDownAction = "RotateScene";
+      }
     }
 
     function handleMouseUp(event) {
@@ -481,19 +598,35 @@
 
       if (mouseDownElementId == "canvas") { // Canvas handling
 
-        var d_theta = deltaX / 10.0;
-        var d_phi   = deltaY / 10.0;
+        if (mouseDownAction == "RotateScene") { // Scene rotation handling
+          var d_theta = deltaX / 10.0;
+          var d_phi   = deltaY / 10.0;
 
-        theta += d_theta;
-        if (theta >= 360.0) // Constrain theta in the [0;360] range
-          theta = theta % 360.0;
-        if (theta < 0.0)
-          theta += 360.0; 
-       
-        phi += d_phi;
-        if (phi > 90.0) phi = 90.0;   // Constrain phi in the [-90;90] range
-        if (phi < -90.0) phi = -90.0; // to avoid up vector problems
-     
+          theta += d_theta;
+          if (theta >= 360.0) // Constrain theta in the [0;360] range
+            theta = theta % 360.0;
+          if (theta < 0.0)
+            theta += 360.0; 
+         
+          phi += d_phi;
+          if (phi > 90.0) phi = 90.0;   // Constrain phi in the [-90;90] range
+          if (phi < -90.0) phi = -90.0; // to avoid up vector problems
+
+        } else if (mouseDownAction == "TimelineDrag") { // Timeline dragging handling
+          // Only use deltaX here          
+          if(deltaX > 0)
+            ++dragDeltas;
+          else if(deltaX < 0)
+            --dragDeltas;
+
+          if (dragDeltas > 5) {
+            selectedFrame = Math.min(sceneFrames - 1, selectedFrame + 1); // Increase frame
+            dragDeltas = 0;
+          } else if (dragDeltas < -5) {
+            selectedFrame = Math.max(0, selectedFrame - 1); // Decrease frame
+            dragDeltas = 0;
+          }
+        }
       }
 
       lastMouseX = newX;
@@ -508,18 +641,8 @@
       sphere_d += delta;
     }
 
-    var timeStep = 0.0;
-
-    function drawScene() {
-
-      if(numberOfSafeToRenderTextures < 2) // Both a color and depth starting image need to be loaded
-        return;
-
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
-
-      // -------------- Render floor grid -------------
-
+    function updateMatrices() {
+      // -------------- Camera calculations - GeoCast camera calculations -------------
       mat4.identity(modelViewMatrix);
       mat4.identity(perspectiveMatrix);
 
@@ -527,12 +650,85 @@
       var cameraPos = vec3.create();
       cameraPos[0] = sphere_d * Math.sin(degToRad(theta)) * Math.cos(degToRad(phi));  
       cameraPos[1] = sphere_d * Math.cos(degToRad(theta)) * Math.cos(degToRad(phi));
-      cameraPos[2] = sphere_d * Math.sin(degToRad(phi));  
-
-      gui_prompt.innerHTML = 'TimeStep' + timeStep + ' Phi:' + phi + 'deg Theta:' + theta + 'deg sphere_d:' + sphere_d ;
+      cameraPos[2] = sphere_d * Math.sin(degToRad(phi));
 
       mat4.lookAt(modelViewMatrix, /* eye */ cameraPos, /* center */ projectionCenter, /* up */ [0, 0, 1]);
       mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 500.0);
+
+      // Store the GeoCast modelview matrix
+      mat4.identity(geocastModelViewMatrix);
+      mat4.multiply(geocastModelViewMatrix, geocastModelViewMatrix, geocastObjects[selectedFrame].modelviewMatrix);
+
+      // Get a perspective matrix from the geocast structure
+      mat4.perspective(geocastPerspectiveMatrix, degToRad(geocastObjects[selectedFrame].Fovy), geocastObjects[selectedFrame].Aspect, 
+                       geocastObjects[selectedFrame].ClipRange[0], geocastObjects[selectedFrame].ClipRange[1]);
+
+      // Set inverse matrices computed on the CPU
+      mat4.invert(geocastInverseMV, geocastModelViewMatrix);
+      mat4.invert(geocastInversePr, geocastPerspectiveMatrix);
+    }
+
+    function executeColorPicking(mouseX, mouseY) {
+      // -------------- Color picking rendering - render camera frustum with a solid color -------------
+      updateMatrices();
+
+      // Do this in the secondary framebuffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, colorPickerFramebuffer);
+      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+
+      gl.useProgram(colorPickerProgram);
+      gl.uniformMatrix4fv(colorPickerProgram.uViewMVMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
+      gl.uniformMatrix4fv(colorPickerProgram.uViewProjMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
+      gl.uniformMatrix4fv(colorPickerProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
+        geocastObjects[selectedFrame].modelviewMatrix);
+      gl.uniformMatrix4fv(colorPickerProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
+        geocastPerspectiveMatrix);
+      gl.uniformMatrix4fv(colorPickerProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
+        geocastInverseMV);      
+      gl.uniformMatrix4fv(colorPickerProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
+        geocastInversePr);
+      gl.bindBuffer(gl.ARRAY_BUFFER, camera_frustum_space_data);
+      gl.vertexAttribPointer(colorPickerProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, camera_frustum_space_data.indices);
+      gl.drawElements(gl.TRIANGLES, camera_frustum_space_data.indices_length, gl.UNSIGNED_SHORT, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);      
+
+      // Detect the point where the mouse clicked
+      var pixel_data = new Uint8Array(4);
+      // Remember that coordinates are upside down for textures
+      gl.readPixels(mouseX, gl.viewportHeight - mouseY, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel_data);
+
+      // Restore original framebuffer
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+      return pixel_data;
+    }
+
+    var timeStep = 0.0;
+
+    var geocastModelViewMatrix = mat4.create();
+    var geocastPerspectiveMatrix = mat4.create();
+    var geocastInverseMV = mat4.create();
+    var geocastInversePr = mat4.create();
+
+    function drawScene() {
+
+      if( geocastObjects[selectedFrame]   === undefined ||
+          isDepthTextureSafeToRender[selectedFrame] == false ||
+          isColorTextureSafeToRender[selectedFrame] == false ) // Needed objects haven't been loaded yet
+        return;
+
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
+
+      updateMatrices();
+
+      gui_prompt.innerHTML = 'TimeStep' + timeStep + ' Phi:' + phi + 'deg Theta:' + theta + 'deg sphere_d:' + sphere_d + ' selectedFrame:' + selectedFrame;      
+
+
+      // -------------- Render floor grid -------------
       gl.useProgram(drawGridProgram);
       gl.uniformMatrix4fv(drawGridProgram.uViewMVMatrix, false /* WebGL supports column-major only */, modelViewMatrix);
       gl.uniformMatrix4fv(drawGridProgram.uViewProjMatrix, false /* WebGL supports column-major only */, perspectiveMatrix);
@@ -542,8 +738,7 @@
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, floor_grid_quad_data.indices);
       gl.drawElements(gl.TRIANGLES, floor_grid_quad_data.indices_length, gl.UNSIGNED_SHORT, 0);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);      
-
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
 
       // ----------- Render model projection -----------
 
@@ -552,22 +747,15 @@
 
       // Update and set uniforms for the GeoCast scene
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
-        geocastObjects[selectedFrame].modelviewMatrix);
-      // Get a perspective matrix from the geocast structure
-      var persp = mat4.create();
-      mat4.perspective(persp, degToRad(geocastObjects[selectedFrame].Fovy), geocastObjects[selectedFrame].Aspect, 
-                       geocastObjects[selectedFrame].ClipRange[0], geocastObjects[selectedFrame].ClipRange[1]);
+        geocastModelViewMatrix);
+      
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
-        persp);
-      // Set inverse matrices computed on the CPU
-      var inverseMV = mat4.create();
-      var inversePr = mat4.create();      
-      mat4.invert(inverseMV, geocastObjects[selectedFrame].modelviewMatrix);
-      mat4.invert(inversePr, persp);
+        geocastPerspectiveMatrix);
+
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
-        inverseMV);      
+        geocastInverseMV);      
       gl.uniformMatrix4fv(viewLatticeProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
-        inversePr);
+        geocastInversePr);
 
 
       // Coordinates from GeoCarve need to be translated to 0;0;0 (they have a different origin)
@@ -598,25 +786,25 @@
 
 
 
-      // Draw projectors extents lines
+      // ----------- Render projectors extents lines -----------
       gl.useProgram(cameraFrustumLinesProgram);
       // Bind VBO, set the vertex attribute data and render
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cameraFrustumLines.indices);
-      gl.bindBuffer(gl.ARRAY_BUFFER, cameraFrustumLines);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, camera_frustum_lines_data.indices);
+      gl.bindBuffer(gl.ARRAY_BUFFER, camera_frustum_lines_data);
       gl.vertexAttribPointer(cameraFrustumLinesProgram.aPosition, 3, gl.FLOAT, false, 0, 0);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uViewMVMatrix, false /* WebGL supports column-major only */, 
         modelViewMatrix);      
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uViewProjMatrix, false /* WebGL supports column-major only */, 
         perspectiveMatrix);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastMVMatrix, false /* WebGL supports column-major only */, 
-        geocastObjects[selectedFrame].modelviewMatrix);
+        geocastModelViewMatrix);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastProjMatrix, false /* WebGL supports column-major only */, 
-        persp);
+        geocastPerspectiveMatrix);
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastMVMatrix_Inverse, false /* WebGL supports column-major only */, 
-        inverseMV);      
+        geocastInverseMV);      
       gl.uniformMatrix4fv(cameraFrustumLinesProgram.uGeoCastProjMatrix_Inverse, false /* WebGL supports column-major only */, 
-        inversePr);
-      gl.drawElements(gl.LINES, cameraFrustumLines.indices_length, gl.UNSIGNED_SHORT, 0);
+        geocastInversePr);
+      gl.drawElements(gl.LINES, camera_frustum_lines_data.indices_length, gl.UNSIGNED_SHORT, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
       gl.bindBuffer(gl.ARRAY_BUFFER, null);
     }
