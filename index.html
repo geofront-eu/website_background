@@ -163,7 +163,7 @@
     function generateLattice() {
       var vertices = new Float32Array(((2 * (256 + 1 /* Last two for degenerate vertices*/)) * 256) * 3);
       var normalize = function(value) { // Normalize a value between [0;256] to the range [0;1]
-        return value / 255;
+        return value / 256;
       }
       for (var y = 0; y < 256 - 1; ++y) {
         // 1 -- 2
@@ -174,23 +174,23 @@
         var base_off = (y * (2 * (256 + 1))) * 3;
 
         // Insert 1 and 5
-        vertices[ base_off + 0 ] = normalize(0);
-        vertices[ base_off + 1 ] = normalize(y);
+        vertices[ base_off + 0 ] = normalize(0 + 0.5);
+        vertices[ base_off + 1 ] = normalize(y + 0.5);
         vertices[ base_off + 2 ] = 0;
 
-        vertices[ base_off + 3 ] = normalize(0);
-        vertices[ base_off + 4 ] = -normalize(y + 1);
+        vertices[ base_off + 3 ] = normalize(0 + 0.5);
+        vertices[ base_off + 4 ] = -normalize(y + 1.5);
         vertices[ base_off + 5 ] = 0;
 
         for (var x = 0; x < 256 - 1; ++x) {
 
            // Insert 2 and 6
-           vertices[ base_off + (x * 2 * 3) + 0 ] = normalize(x + 1);
-           vertices[ base_off + (x * 2 * 3) + 1 ] = normalize(y);
+           vertices[ base_off + (x * 2 * 3) + 0 ] = normalize(x + 1.5);
+           vertices[ base_off + (x * 2 * 3) + 1 ] = normalize(y + 0.5);
            vertices[ base_off + (x * 2 * 3) + 2 ] = 0;
 
-           vertices[ base_off + (x * 2 * 3) + 3 ] = normalize(x + 1);
-           vertices[ base_off + (x * 2 * 3) + 4 ] = normalize(y + 1);
+           vertices[ base_off + (x * 2 * 3) + 3 ] = normalize(x + 1.5);
+           vertices[ base_off + (x * 2 * 3) + 4 ] = normalize(y + 1.5);
            vertices[ base_off + (x * 2 * 3) + 5 ] = 0;
         }
 
@@ -199,8 +199,8 @@
         vertices[ base_off + (256 * 2 * 3) + 1 ] = vertices[ base_off + (256 * 2 * 3) + 1 - 3 ];
         vertices[ base_off + (256 * 2 * 3) + 2 ] = vertices[ base_off + (256 * 2 * 3) + 2 - 3 ];
 
-        vertices[ base_off + (256 * 2 * 3) + 3 ] = normalize(0);
-        vertices[ base_off + (256 * 2 * 3) + 4 ] = normalize(y + 2);
+        vertices[ base_off + (256 * 2 * 3) + 3 ] = normalize(0 + 0.5);
+        vertices[ base_off + (256 * 2 * 3) + 4 ] = normalize(y + 2.5);
         vertices[ base_off + (256 * 2 * 3) + 5 ] = 0;
       }
       return vertices;

@@ -14,8 +14,9 @@
  *     var res = readGeoCastFile("textfile.txt", callback);
  */
 function readGeoCastFile(filePath, callback) {
-  var rawFile = new XMLHttpRequest();
+  var rawFile = new XMLHttpRequest();  
   rawFile.open("GET", filePath, true);
+  rawFile.overrideMimeType('text/plain');
   rawFile.onreadystatechange = function () {
     if(rawFile.readyState === 4) {
       if(rawFile.status === 200 || rawFile.status == 0) {
@@ -25,7 +26,7 @@ function readGeoCastFile(filePath, callback) {
       }
     }
   }
-  rawFile.send(null);
+  rawFile.send();
 }
 
 /**
