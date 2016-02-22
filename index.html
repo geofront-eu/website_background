@@ -171,7 +171,7 @@
       setupFramebuffers();
       setupGeoCastFiles();
       setupTextures();
-      setupInput(canvas);      
+      setupInput(canvas);
 
       gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.enable(gl.DEPTH_TEST);
@@ -484,6 +484,9 @@
       return s.substr(s.length - size);
     }
 
+    var cameraType = ["TiltCamera", "SideCamera", "TopCamera"];
+    var selectedCamera = 0;
+
     function setupGeoCastFiles() {      
       for (var i = 1; i <= sceneFrames; ++i) {
         var callback = (function(i) {
@@ -492,7 +495,7 @@
             geocastObjects[index - 1] = output;
           }
         })(i);
-        readGeoCastFile("assets/TiltCamera/geocast/" + formatNumberWithLeadingZeros(i, 4) + ".geocast", callback);
+        readGeoCastFile("assets/" + cameraType[selectedCamera] + "/geocast/" + formatNumberWithLeadingZeros(i, 4) + ".geocast", callback);
       }
     }
 
@@ -531,17 +534,17 @@
 
       for (var i = 1; i <= sceneFrames; ++i) {
         var imageNumber = formatNumberWithLeadingZeros(i, 4);
-        var depthMap = loadTextureFromFile("assets/TiltCamera/depth/" + imageNumber + ".png", true, i);
+        var depthMap = loadTextureFromFile("assets/" + cameraType[selectedCamera] + "/depth/" + imageNumber + ".png", true, i);
         depthMapTextures[i - 1] = depthMap;
-        var colorMap = loadTextureFromFile("assets/TiltCamera/color/" + imageNumber + ".png", false, i);
+        var colorMap = loadTextureFromFile("assets/" + cameraType[selectedCamera] + "/color/" + imageNumber + ".png", false, i);
         colorMapTextures[i - 1] = colorMap;
       }
     }
 
     var projectionCenter = vec3.fromValues(0, 0, 0); // The center of the projection where the camera points at all times
-    var theta = 130.0; // Degrees spherical coord
+    var theta = 200.0; // Degrees spherical coord
     var phi = 30.0;   // Degrees spherical coord
-    var sphere_d = 50.0; // Start spherical distance
+    var sphere_d = 100.0; // Start spherical distance
 
     var mouseDown = false;
     var mouseDownElementId;
@@ -557,6 +560,36 @@
       canvas.addEventListener('mouseout', onMouseOutOfCanvas, true); // Stop canvas input if mouse gets out of it
       canvas.onwheel = handleMouseWheel;
       document.onkeydown = handleKeyDown;
+      // Place multi-view buttons in the canvas
+      document.getElementById('tiltButton').addEventListener('mousedown', onTiltViewClicked, true);
+      document.getElementById('sideButton').addEventListener('mousedown', onSideViewClicked, true);
+      document.getElementById('topButton').addEventListener('mousedown',  onTopViewClicked, true);
+    }
+
+    // View handlers
+    function onTiltViewClicked() {
+      if(selectedCamera == 0)
+        return;
+      else {
+        selectedCamera = 0;
+        setupTextures();
+      }
+    }
+    function onSideViewClicked() {
+      if(selectedCamera == 1)
+        return;
+      else {
+        selectedCamera = 1;
+        setupTextures();
+      }
+    }
+    function onTopViewClicked() {
+      if(selectedCamera == 2)
+        return;
+      else {
+        selectedCamera = 2;
+        setupTextures();
+      }
     }
 
     function handleKeyDown(event) {
@@ -836,10 +869,56 @@
     }
 
   </script>
+  <style>
+    .container {
+      position: relative;
+    }
+    #canvas {
+       position: absolute;
+       border: none;
+    }
+    #buttonsDiv {
+      padding: 5px;
+    }
+    .viewButton {
+      position: relative;
+      padding: 5px;
+
+      width: 100px;
+      height: 100px;
+
+      -webkit-transition: all 200ms ease-in;
+      -webkit-transform: scale(1); 
+      -ms-transition: all 200ms ease-in;
+      -ms-transform: scale(1); 
+      -moz-transition: all 200ms ease-in;
+      -moz-transform: scale(1);
+      transition: all 200ms ease-in;
+      transform: scale(1);   
+    }
+    .viewButton:hover {
+      box-shadow: 0px 0px 150px #000000;
+      z-index: 2;
+      -webkit-transition: all 200ms ease-in;
+      -webkit-transform: scale(1.1);
+      -ms-transition: all 200ms ease-in;
+      -ms-transform: scale(1.1);   
+      -moz-transition: all 200ms ease-in;
+      -moz-transform: scale(1.1);
+      transition: all 200ms ease-in;
+      transform: scale(1.1);
+    }
+  </style>
 </head>
 <body onload="webGLStart();">
-  <canvas id="canvas" style="border: none;" width="1200" height="800"></canvas>
-    <div id="gui_prompt"></div>
-
+  <div class="container">    
+    <canvas id="canvas"  width="1200" height="800"></canvas>
+    <div id="buttonsDiv">
+      <img id="tiltButton" class="viewButton" src="images/tiltView.png"/>
+      <img id="sideButton" class="viewButton" src="images/sideView.png"/>
+      <img id="topButton"  class="viewButton" src="images/topView.png"/>
+    </div>
+  </div>
+  <div id="gui_prompt"></div>
 </body>
 </html>
