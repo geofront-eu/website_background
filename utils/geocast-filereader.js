@@ -1,3 +1,5 @@
+// glMatrix 2.3.2 or higher is required - make sure to include it before this js file
+
 /**
  * Reads a GeoCast text file on the local webserver via AJAX
  * @param {filePath} The local path to the text file to be read
@@ -39,19 +41,18 @@ function readGeoCastFile(filePath, callback) {
  *    viewSlice_FODAngle = 145.0;
  *    viewSlice_Size = 100.0;
  *    // Row-major
- *    modelviewMatrix = [1.0, 0.0, 0.0, 0.0,
- *                       0.0, 1.0, 0.0, 0.0,
- *                       0.0, 0.0, 1.0, 0.0,
- *                       0.0, 0.0, 0.0, 1.0];
+ *    modelviewMatrix; // mat4 object
  *    ------ varying part -------
  *    dataProject = "Ortho";
  *    windowSize = [12.0, 43.2];
  *    projRange = [0.10, 200.0];
+ *    orthoMatrix; // mat4 object
  *    ---------------------------
  *    dataProject = "Perspective";
  *    Fovy = 45.0; (degrees)
  *    Aspect = 1.0;
  *    ClipRange = [1.0, 200.0];
+ *    perspMatrix; // mat4 object
  *    --- end of varying part ---
  *    
  *    *optional* worldSpaceDepth = true;
@@ -120,16 +121,16 @@ function parseGeoCastContent(content) {
     alert("Unrecognized MVM type");
     return;
   }
-  output.modelviewMatrix = [];
-  var readMatrixRow = function(line) {
+  output.modelviewMatrix = mat4.create();
+  var readMatrixRow = function(line, index) {
     parts = line.trim().split(' ');
-    output.modelviewMatrix.push(parseFloat(parts[0]));
-    output.modelviewMatrix.push(parseFloat(parts[1]));
-    output.modelviewMatrix.push(parseFloat(parts[2]));
-    output.modelviewMatrix.push(parseFloat(parts[3]));
+    output.modelviewMatrix[4 * index + 0] = parseFloat(parts[0]);
+    output.modelviewMatrix[4 * index + 1] = parseFloat(parts[1]);
+    output.modelviewMatrix[4 * index + 2] = parseFloat(parts[2]);
+    output.modelviewMatrix[4 * index + 3] = parseFloat(parts[3]);
   };
   for (var j = 0; j < 4; j++) {
-    readMatrixRow(arrayOfLines[i++]);
+    readMatrixRow(arrayOfLines[i++], j);
   }
 
   // DataProject
@@ -140,7 +141,7 @@ function parseGeoCastContent(content) {
     return;
   }
   output.dataProject = parts[1];
-  if (output.dataProject == "Ortho") {
+  if (output.dataProject == "Ortho") { // Orthographic view
     if (parts[2] != "WindowSize") {
       alert("Unrecognized WindowSize tag");
       return;
@@ -151,7 +152,12 @@ function parseGeoCastContent(content) {
       return;
     }
     output.projRange = [parseFloat(parts[6]), parseFloat(parts[7])];
-  } else if (output.dataProject == "Perspective") {
+    output.orthoMatrix = mat4.create();
+    mat4.ortho(output.orthoMatrix,
+        -output.windowSize[0], output.windowSize[0], 
+        -output.windowSize[1], output.windowSize[1],
+        output.projRange[0], output.projRange[1]);
+  } else if (output.dataProject == "Perspective") { // Perspective view
     if (parts[2] != "Fovy") {
       alert("Unrecognized Fovy tag");
       return;
@@ -165,8 +171,11 @@ function parseGeoCastContent(content) {
     if (parts[6] != "ClipRange") {
       alert("Unrecognized ClipRange tag");
       return;
-    }
-    output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];    
+    }    
+    output.ClipRange = [parseFloat(parts[7]), parseFloat(parts[8])];
+    output.perspMatrix = mat4.create();
+    mat4.perspective(output.perspMatrix, degToRad(output.Fovy), output.Aspect, 
+                     output.ClipRange[0], output.ClipRange[1]);
   } else {
     alert("Unrecognized DataProject camera type");
     return;

@@ -658,7 +658,7 @@
       var delta = Math.max(-1, Math.min(1, (event.wheelDelta || -event.deltaY || -event.detail)));
       //var delta = Math.max(-1, Math.min(1, event.wheelDelta));
  
-      sphere_d += delta;
+      sphere_d += delta * -2.0;
     }
 
     function updateMatrices() {
@@ -676,16 +676,13 @@
       mat4.perspective(perspectiveMatrix, degToRad(45), gl.viewportWidth / gl.viewportHeight, 0.1, 500.0);
 
       // Store the GeoCast modelview matrix
-      mat4.identity(geocastModelViewMatrix);
-      mat4.multiply(geocastModelViewMatrix, geocastModelViewMatrix, geocastObjects[selectedFrame].modelviewMatrix);
+      geocastModelViewMatrix = geocastObjects[selectedFrame].modelviewMatrix;
 
-      // Get an ortographic camera matrix from the geocast structure
-      // mat4.perspective(geocastPerspectiveMatrix, degToRad(geocastObjects[selectedFrame].Fovy), geocastObjects[selectedFrame].Aspect, 
-      //                  geocastObjects[selectedFrame].ClipRange[0], geocastObjects[selectedFrame].ClipRange[1]);
-      mat4.ortho(geocastPerspectiveMatrix,
-        -geocastObjects[selectedFrame].windowSize[0], geocastObjects[selectedFrame].windowSize[0], 
-        -geocastObjects[selectedFrame].windowSize[1], geocastObjects[selectedFrame].windowSize[1],
-        geocastObjects[selectedFrame].projRange[0], geocastObjects[selectedFrame].projRange[1]);
+      // Get an ortographic or perspective camera matrix from the geocast structure
+      if (geocastObjects[selectedFrame].dataProject == "Perspective")
+        geocastPerspectiveMatrix = geocastObjects[selectedFrame].perspMatrix;
+      else
+        geocastPerspectiveMatrix = geocastObjects[selectedFrame].orthoMatrix;
 
       // Set inverse matrices computed on the CPU
       mat4.invert(geocastInverseMV, geocastModelViewMatrix);
